@@ -360,6 +360,18 @@
     document.getElementById('togglePw').textContent = showing ? 'Show' : 'Hide';
   });
 
+  // Promise wrapper around google.script.run, so independent calls (e.g. login +
+  // the dashboard's test list) can be fired in parallel with Promise-based code
+  // instead of only chaining one after another via success/failure callbacks.
+  function callServer_(fnName) {
+    const args = Array.prototype.slice.call(arguments, 1);
+    return new Promise((resolve, reject) => {
+      google.script.run
+        .withSuccessHandler(resolve)
+        .withFailureHandler(reject)[fnName].apply(null, args);
+    });
+  }
+
   loginForm.addEventListener('submit', (e) => {
     e.preventDefault();
     loginError.classList.remove('show');
@@ -369,36 +381,40 @@
     loginBtn.disabled = true;
     loginBtn.textContent = 'Checking...';
 
-    google.script.run
-      .withSuccessHandler((res) => {
-        loginBtn.disabled = false;
-        loginBtn.textContent = 'Log In';
-        if (res && res.ok) {
-          student = { id: res.id, name: res.name, isAdmin: !!res.isAdmin };
-          enterDashboard();
-        } else {
-          loginError.textContent = 'Invalid Student ID or Password. Please try again.';
-          loginError.classList.add('show');
-        }
-      })
-      .withFailureHandler((err) => {
-        loginBtn.disabled = false;
-        loginBtn.textContent = 'Log In';
-        loginError.textContent = 'Something went wrong. Please try again.';
+    // Each Apps Script round trip costs 1.5-3s regardless of caching, so fire the
+    // dashboard's test list at the same time as the login check instead of only
+    // starting it after login succeeds — cuts the wait roughly in half. It only
+    // needs the student ID already typed in, not the auth result.
+    const testsPromise = callServer_('getTestListForStudent', id).catch(() => null);
+
+    callServer_('authenticate', id, pw).then((res) => {
+      loginBtn.disabled = false;
+      loginBtn.textContent = 'Log In';
+      if (res && res.ok) {
+        student = { id: res.id, name: res.name, isAdmin: !!res.isAdmin };
+        enterDashboard(testsPromise);
+      } else {
+        loginError.textContent = 'Invalid Student ID or Password. Please try again.';
         loginError.classList.add('show');
-      })
-      .authenticate(id, pw);
+      }
+    }).catch(() => {
+      loginBtn.disabled = false;
+      loginBtn.textContent = 'Log In';
+      loginError.textContent = 'Something went wrong. Please try again.';
+      loginError.classList.add('show');
+    });
   });
 
   // ---------- Dashboard (category selection) ----------
-  function enterDashboard() {
+  function enterDashboard(prefetchedTestsPromise) {
     document.getElementById('welcomeMsg').textContent = 'Welcome, ' + student.name + '!';
     document.getElementById('whoami').textContent = 'ID: ' + student.id;
     currentCategory = null;
     showView(dashboardView);
 
-    google.script.run
-      .withSuccessHandler((tests) => {
+    const testsPromise = prefetchedTestsPromise || callServer_('getTestListForStudent', student.id);
+    testsPromise.then((tests) => {
+        if (!tests) throw new Error('Could not load categories.');
         cachedTests = tests;
         const adminSlot = document.getElementById('adminSlot');
         adminSlot.innerHTML = '';
@@ -445,10 +461,9 @@
           grid.appendChild(card);
         });
       })
-      .withFailureHandler((err) => {
+      .catch(() => {
         document.getElementById('categoryGrid').innerHTML = '<p style="color:#b3261e;">Could not load categories.</p>';
-      })
-      .getTestListForStudent(student.id);
+      });
   }
 
   document.getElementById('logoutBtn').addEventListener('click', () => {
