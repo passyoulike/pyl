@@ -1,0 +1,795 @@
+<!DOCTYPE html>
+<html>
+<head>
+<base target="_top">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#0f5c4d">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<style>
+  :root {
+    --primary: #0f5c4d;
+    --primary-dark: #0a3f35;
+    --bg: #f4f7f6;
+    --card: #ffffff;
+    --text: #1c2a27;
+    --muted: #6b7a76;
+    --accent: #d9a441;
+    --correct: #1b7a3d;
+    --incorrect: #b3261e;
+    /* App content is locked to this width everywhere, phone or desktop, so the
+       experience is always the mobile layout rather than a responsive one. */
+    --app-width: 480px;
+  }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html {
+    -webkit-text-size-adjust: 100%;
+    text-size-adjust: 100%;
+  }
+  html, body {
+    margin: 0;
+    min-height: 100vh;
+    font-family: "Segoe UI", Roboto, Arial, sans-serif;
+    background: var(--bg);
+    overflow-x: hidden;
+  }
+  /* On screens wider than a phone, this frames the app as a centered mobile
+     column instead of letting it stretch into a desktop multi-column layout. */
+  body {
+    display: flex;
+    justify-content: center;
+  }
+  #appRoot {
+    width: 100%;
+    max-width: var(--app-width);
+    min-height: 100vh;
+    background: var(--bg);
+    box-shadow: 0 0 40px rgba(0,0,0,0.08);
+  }
+  @media (min-width: 481px) {
+    body { background: #dfe6e3; }
+  }
+  .view { display: none; }
+  .view.active { display: block; }
+  button, .choice, .toggle-pw, .pill-btn, .test-tab, .category-card {
+    touch-action: manipulation;
+  }
+  input, button {
+    -webkit-appearance: none;
+    appearance: none;
+  }
+
+  /* ---------- Login ---------- */
+  #loginView.active {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 100vh;
+    padding: 24px;
+    background: linear-gradient(160deg, var(--primary) 0%, var(--primary-dark) 55%, #06231d 100%);
+  }
+  .card {
+    width: 100%;
+    max-width: 400px;
+    background: var(--card);
+    border-radius: 14px;
+    box-shadow: 0 20px 50px rgba(0,0,0,0.25);
+    padding: 36px 32px 30px;
+  }
+  .badge {
+    width: 56px; height: 56px; border-radius: 50%;
+    background: var(--primary); color: #fff;
+    display: flex; align-items: center; justify-content: center;
+    font-weight: 700; font-size: 20px; margin: 0 auto 14px;
+  }
+  .card h1 { text-align: center; font-size: 20px; color: var(--text); margin: 0 0 4px; }
+  .subtitle { text-align: center; color: var(--muted); font-size: 13px; margin: 0 0 26px; }
+  label { display: block; font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 6px; }
+  .field { margin-bottom: 18px; }
+  input[type="text"], input[type="password"] {
+    width: 100%; padding: 11px 13px; border: 1px solid #d6ddda; border-radius: 8px;
+    font-size: 16px; background: #fbfdfc; /* 16px stops iOS Safari auto-zooming in on focus */
+  }
+  input[type="text"]:focus, input[type="password"]:focus {
+    outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(15,92,77,0.15);
+  }
+  .pw-wrap { position: relative; }
+  .pw-wrap input { padding-right: 42px; }
+  .toggle-pw {
+    position: absolute; right: 10px; top: 50%; transform: translateY(-50%);
+    background: none; border: none; color: var(--muted); font-size: 12px; cursor: pointer; padding: 4px;
+  }
+  button.submit {
+    width: 100%; padding: 12px; background: var(--primary); color: #fff; border: none;
+    border-radius: 8px; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 4px;
+  }
+  button.submit:hover { background: var(--primary-dark); }
+  button.submit:disabled { opacity: 0.6; cursor: not-allowed; }
+  .error {
+    display: none; background: #fdecea; color: var(--incorrect); border: 1px solid #f5c2be;
+    border-radius: 8px; padding: 9px 12px; font-size: 13px; margin-bottom: 16px;
+  }
+  .error.show { display: block; }
+  .footer-note { text-align: center; font-size: 11.5px; color: var(--muted); margin-top: 22px; line-height: 1.5; }
+
+  /* ---------- Header (dashboard + quiz) ---------- */
+  header {
+    background: linear-gradient(160deg, var(--primary) 0%, var(--primary-dark) 100%);
+    color: #fff; padding: max(16px, env(safe-area-inset-top)) 20px 16px;
+    display: flex; align-items: center; justify-content: space-between;
+    flex-wrap: wrap; gap: 10px;
+  }
+  header .brand { font-weight: 700; font-size: 15px; }
+  header .who, header .progress { font-size: 13px; opacity: 0.95; }
+  .pill-btn {
+    background: rgba(255,255,255,0.15); color: #fff; border: 1px solid rgba(255,255,255,0.4);
+    border-radius: 6px; padding: 6px 12px; font-size: 12px; cursor: pointer; text-decoration: none;
+  }
+  .pill-btn:hover { background: rgba(255,255,255,0.25); }
+
+  /* ---------- Dashboard ---------- */
+  main { margin: 32px auto 80px; padding: 0 20px calc(24px + env(safe-area-inset-bottom)); }
+  .welcome { text-align: center; margin-bottom: 28px; }
+  .welcome h1 { font-size: 21px; color: var(--text); margin-bottom: 4px; }
+  .welcome p { color: var(--muted); font-size: 14px; margin: 0; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 18px; }
+  .test-card {
+    background: var(--card); border-radius: 12px; padding: 22px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.06); display: flex; flex-direction: column; gap: 10px;
+  }
+  .test-card h2 { font-size: 16px; margin: 0; color: var(--text); }
+  .test-card .meta { font-size: 12.5px; color: var(--muted); }
+  .test-card .start {
+    margin-top: auto; text-align: center; background: var(--primary); color: #fff;
+    border: none; padding: 10px; border-radius: 8px; font-size: 14px; font-weight: 600; cursor: pointer;
+  }
+  .test-card .start:hover { background: var(--primary-dark); }
+  .test-card.completed { opacity: 0.95; }
+  .test-card .start.retake { background: var(--accent); color: #3a2c0a; margin-top: 4px; }
+  .test-card .start.retake:hover { background: #c6912f; }
+  .test-card .start.resume { background: #f2c94c; color: #4a3a06; }
+  .test-card .start.resume:hover { background: #dcb53f; }
+  .done-badge {
+    display: inline-flex; align-items: center; gap: 5px;
+    background: rgba(27,122,61,0.12); color: var(--correct, #1b7a3d);
+    font-size: 11.5px; font-weight: 700; padding: 3px 9px; border-radius: 20px;
+    width: fit-content;
+  }
+  .done-badge.failed { background: rgba(179,38,30,0.12); color: var(--incorrect); }
+  .category-section { margin-bottom: 30px; }
+  .category-title {
+    font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase;
+    letter-spacing: 0.05em; margin: 0 0 12px; padding-bottom: 8px; border-bottom: 1px solid #dfe6e3;
+  }
+  .category-card {
+    background: var(--card); border-radius: 14px; padding: 26px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.06); cursor: pointer;
+    border: 1px solid transparent; transition: border-color .15s, transform .1s;
+  }
+  .category-card:hover { border-color: rgba(15,92,77,0.3); transform: translateY(-1px); }
+  .category-card h2 { font-size: 18px; margin: 0 0 6px; color: var(--text); }
+  .category-card .meta { font-size: 13px; color: var(--muted); margin: 0 0 14px; }
+  .cat-progress-track { width: 100%; height: 7px; background: #e4ece9; border-radius: 4px; overflow: hidden; margin-bottom: 8px; }
+  .cat-progress-fill { height: 100%; background: var(--primary); border-radius: 4px; }
+  .cat-progress-label { font-size: 12px; color: var(--muted); }
+
+  /* ---------- Quiz ---------- */
+  .q-card { background: var(--card); border-radius: 12px; padding: 20px 22px; box-shadow: 0 6px 18px rgba(0,0,0,0.05); margin-bottom: 16px; }
+  .q-num { font-size: 12px; font-weight: 700; color: var(--primary); margin-bottom: 6px; }
+  .q-text { font-size: 15px; color: var(--text); margin: 0 0 14px; line-height: 1.5; }
+  .choice {
+    display: flex; align-items: flex-start; gap: 10px; padding: 9px 10px; border-radius: 8px;
+    margin-bottom: 6px; cursor: pointer; border: 1px solid transparent;
+  }
+  .choice:hover { background: #f2f6f4; }
+  .choice input { margin-top: 3px; }
+  .choice label { font-size: 14px; color: var(--text); cursor: pointer; }
+  .choice.correct { background: rgba(27,122,61,0.1); border-color: rgba(27,122,61,0.4); }
+  .choice.incorrect { background: rgba(179,38,30,0.08); border-color: rgba(179,38,30,0.35); }
+  .rationale {
+    display: none; margin-top: 12px; padding: 12px 14px; background: #f7f4ea;
+    border-left: 3px solid var(--accent); border-radius: 6px; font-size: 13px; color: #4a3f22; line-height: 1.5;
+  }
+  .rationale.show { display: block; }
+  .rationale strong { color: var(--text); }
+  .submit-bar { background: var(--bg); padding: 14px 0 calc(14px + env(safe-area-inset-bottom)); text-align: center; }
+  .unanswered-warning { color: var(--incorrect); font-size: 13px; text-align: center; margin-top: 8px; display: none; }
+  .unanswered-warning.show { display: block; }
+  .result-banner {
+    background: var(--card); border-radius: 12px; padding: 26px; text-align: center;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.06); margin-bottom: 20px;
+  }
+  .result-banner .score { font-size: 36px; font-weight: 700; color: var(--primary); }
+  .result-banner .pass-fail {
+    font-size: 18px; font-weight: 800; letter-spacing: 0.04em; margin-top: 6px;
+  }
+  .result-banner .pass-fail.passed { color: var(--correct); }
+  .result-banner .pass-fail.failed { color: var(--incorrect); }
+  .result-banner .pct { font-size: 15px; color: var(--muted); margin-top: 4px; }
+  .result-banner .retake-btn { margin-top: 18px; }
+  .loading { text-align: center; color: var(--muted); padding: 40px 0; }
+
+  /* ---------- Admin / Results ---------- */
+  .admin-card {
+    background: linear-gradient(135deg, #fff8ea, #fdf1d6);
+    border: 1px solid rgba(217,164,65,0.5);
+  }
+  .admin-card .start { background: var(--accent); color: #3a2c0a; }
+  .admin-card .start:hover { background: #c6912f; }
+  .stat-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 24px; }
+  .stat-box { background: var(--card); border-radius: 10px; padding: 16px; text-align: center; box-shadow: 0 6px 16px rgba(0,0,0,0.05); }
+  .stat-box .num { font-size: 22px; font-weight: 700; color: var(--primary); }
+  .stat-box .lbl { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .test-tabs { display: flex; gap: 8px; margin-bottom: 18px; flex-wrap: wrap; }
+  .test-tab {
+    background: var(--card); border: 1px solid #d6ddda; color: var(--text);
+    padding: 8px 14px; border-radius: 20px; font-size: 13px; cursor: pointer;
+  }
+  .test-tab.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+  table.leaderboard { width: 100%; border-collapse: collapse; background: var(--card); border-radius: 12px; overflow: hidden; box-shadow: 0 6px 18px rgba(0,0,0,0.05); }
+  table.leaderboard th, table.leaderboard td { padding: 10px 14px; text-align: left; font-size: 13.5px; }
+  table.leaderboard th { background: #eef3f1; color: var(--muted); font-size: 11.5px; text-transform: uppercase; letter-spacing: 0.03em; }
+  table.leaderboard tbody tr:nth-child(even) { background: #fafcfb; }
+  table.leaderboard td.pct-cell { font-weight: 700; }
+  table.leaderboard td.rank-cell { color: var(--muted); font-size: 12px; width: 30px; }
+</style>
+</head>
+<body>
+<div id="appRoot">
+
+<!-- ===================== LOGIN VIEW ===================== -->
+<div id="loginView" class="view active">
+  <div class="card">
+    <div class="badge">NR</div>
+    <h1>Nurse Radi</h1>
+    <p class="subtitle">Nursing Practice Questions</p>
+
+    <div class="error" id="loginError">Invalid Student ID or Password. Please try again.</div>
+
+    <form id="loginForm" autocomplete="off">
+      <div class="field">
+        <label for="studentId">Student ID</label>
+        <input type="text" id="studentId" placeholder="e.g. 02-2425-000999" required>
+      </div>
+      <div class="field">
+        <label for="password">Password</label>
+        <div class="pw-wrap">
+          <input type="password" id="password" placeholder="Enter your password" required>
+          <button type="button" class="toggle-pw" id="togglePw">Show</button>
+        </div>
+      </div>
+      <button type="submit" class="submit" id="loginBtn">Log In</button>
+    </form>
+
+    <p class="footer-note">Use the <strong>Student ID</strong> and <strong>Password</strong> provided to you by your instructor.<br>Contact your Nurse Radi Admin if you cannot log in.</p>
+  </div>
+</div>
+
+<!-- ===================== DASHBOARD VIEW ===================== -->
+<div id="dashboardView" class="view">
+  <header>
+    <div class="brand">Nurse Radi</div>
+    <div class="who" id="whoami"></div>
+    <button class="pill-btn" id="logoutBtn">Log out</button>
+  </header>
+  <main>
+    <div class="welcome">
+      <h1 id="welcomeMsg">Welcome!</h1>
+      <p>Choose a category to begin.</p>
+    </div>
+    <div id="adminSlot"></div>
+    <div class="grid" id="categoryGrid">
+      <div class="loading">Loading categories...</div>
+    </div>
+  </main>
+</div>
+
+<!-- ===================== CATEGORY TESTS VIEW ===================== -->
+<div id="categoryView" class="view">
+  <header>
+    <div class="brand" id="categoryTitle">Category</div>
+    <div class="progress" id="categoryProgressLabel"></div>
+    <button class="pill-btn" id="categoryBackBtn">Back to Categories</button>
+  </header>
+  <main>
+    <div id="categoryTestSections">
+      <div class="loading">Loading tests...</div>
+    </div>
+  </main>
+</div>
+
+<!-- ===================== QUIZ VIEW ===================== -->
+<div id="quizView" class="view">
+  <header>
+    <div class="brand" id="testTitle">Nurse Radi Test</div>
+    <div class="progress" id="progressLabel"></div>
+    <button class="pill-btn" id="backBtn">Back to Tests</button>
+  </header>
+  <main id="quizContainer">
+    <div class="loading">Loading questions...</div>
+  </main>
+</div>
+
+<!-- ===================== RESULTS VIEW (admin only) ===================== -->
+<div id="resultsView" class="view">
+  <header>
+    <div class="brand">Class Results</div>
+    <div class="progress" id="resultsSubtitle"></div>
+    <button class="pill-btn" id="resultsBackBtn">Back to Dashboard</button>
+  </header>
+  <main id="resultsContainer">
+    <div class="loading">Loading results...</div>
+  </main>
+</div>
+
+</div><!-- /#appRoot -->
+
+<script>
+  let student = null;
+  let currentQuestions = [];
+  let currentSetKey = null;
+  let currentTitle = '';
+  let currentCategory = null;
+  let cachedTests = null; // populated by enterDashboard(); reused by enterCategoryView() to avoid a redundant server round-trip
+
+  const CATEGORY_ORDER = ['MCN - Maternal & Child', 'Med Surg'];
+  const PASS_THRESHOLD = 75; // percent score needed to pass a test
+
+  const loginView = document.getElementById('loginView');
+  const dashboardView = document.getElementById('dashboardView');
+  const categoryView = document.getElementById('categoryView');
+  const quizView = document.getElementById('quizView');
+  const resultsView = document.getElementById('resultsView');
+
+  function showView(view) {
+    [loginView, dashboardView, categoryView, quizView, resultsView].forEach(v => v.classList.remove('active'));
+    view.classList.add('active');
+  }
+
+  // ---------- Login ----------
+  const loginForm = document.getElementById('loginForm');
+  const loginError = document.getElementById('loginError');
+  const loginBtn = document.getElementById('loginBtn');
+  const pwInput = document.getElementById('password');
+
+  document.getElementById('togglePw').addEventListener('click', () => {
+    const showing = pwInput.type === 'text';
+    pwInput.type = showing ? 'password' : 'text';
+    document.getElementById('togglePw').textContent = showing ? 'Show' : 'Hide';
+  });
+
+  loginForm.addEventListener('submit', (e) => {
+    e.preventDefault();
+    loginError.classList.remove('show');
+    const id = document.getElementById('studentId').value.trim();
+    const pw = pwInput.value.trim();
+
+    loginBtn.disabled = true;
+    loginBtn.textContent = 'Checking...';
+
+    google.script.run
+      .withSuccessHandler((res) => {
+        loginBtn.disabled = false;
+        loginBtn.textContent = 'Log In';
+        if (res && res.ok) {
+          student = { id: res.id, name: res.name, isAdmin: !!res.isAdmin };
+          enterDashboard();
+        } else {
+          loginError.textContent = 'Invalid Student ID or Password. Please try again.';
+          loginError.classList.add('show');
+        }
+      })
+      .withFailureHandler((err) => {
+        loginBtn.disabled = false;
+        loginBtn.textContent = 'Log In';
+        loginError.textContent = 'Something went wrong. Please try again.';
+        loginError.classList.add('show');
+      })
+      .authenticate(id, pw);
+  });
+
+  // ---------- Dashboard (category selection) ----------
+  function enterDashboard() {
+    document.getElementById('welcomeMsg').textContent = 'Welcome, ' + student.name + '!';
+    document.getElementById('whoami').textContent = 'ID: ' + student.id;
+    currentCategory = null;
+    showView(dashboardView);
+
+    google.script.run
+      .withSuccessHandler((tests) => {
+        cachedTests = tests;
+        const adminSlot = document.getElementById('adminSlot');
+        adminSlot.innerHTML = '';
+
+        if (student.isAdmin) {
+          const adminCard = document.createElement('div');
+          adminCard.className = 'test-card admin-card';
+          adminCard.style.marginBottom = '24px';
+          adminCard.innerHTML =
+            '<h2>Class Results</h2>' +
+            '<p class="meta">View attempt counts, class averages, and per-student leaderboards.</p>' +
+            '<button class="start">View Results</button>';
+          adminCard.querySelector('.start').addEventListener('click', enterResults);
+          adminSlot.appendChild(adminCard);
+        }
+
+        const byCategory = {};
+        tests.forEach(t => {
+          const cat = t.category || 'Other';
+          if (!byCategory[cat]) byCategory[cat] = [];
+          byCategory[cat].push(t);
+        });
+
+        const orderedCategories = CATEGORY_ORDER.filter(c => byCategory[c]).concat(
+          Object.keys(byCategory).filter(c => CATEGORY_ORDER.indexOf(c) === -1)
+        );
+
+        const grid = document.getElementById('categoryGrid');
+        grid.innerHTML = '';
+
+        orderedCategories.forEach(cat => {
+          const list = byCategory[cat];
+          const completedCount = list.filter(t => t.completed).length;
+          const pct = Math.round((completedCount / list.length) * 100);
+
+          const card = document.createElement('div');
+          card.className = 'category-card';
+          card.innerHTML =
+            '<h2>' + cat + '</h2>' +
+            '<p class="meta">' + list.length + ' practice test' + (list.length === 1 ? '' : 's') + '</p>' +
+            '<div class="cat-progress-track"><div class="cat-progress-fill" style="width:' + pct + '%"></div></div>' +
+            '<div class="cat-progress-label">' + completedCount + ' of ' + list.length + ' completed</div>';
+          card.addEventListener('click', () => enterCategoryView(cat));
+          grid.appendChild(card);
+        });
+      })
+      .withFailureHandler((err) => {
+        document.getElementById('categoryGrid').innerHTML = '<p style="color:#b3261e;">Could not load categories.</p>';
+      })
+      .getTestListForStudent(student.id);
+  }
+
+  document.getElementById('logoutBtn').addEventListener('click', () => {
+    student = null;
+    cachedTests = null;
+    document.getElementById('studentId').value = '';
+    document.getElementById('password').value = '';
+    showView(loginView);
+  });
+
+  // ---------- In-progress quiz saving (browser-local, cleared when the student clears browsing data) ----------
+  function progressKey(setKey) {
+    return 'npq_progress_' + student.id + '_' + setKey;
+  }
+
+  function getSavedProgress(setKey) {
+    try {
+      const raw = localStorage.getItem(progressKey(setKey));
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      if (typeof parsed.index !== 'number' || typeof parsed.score !== 'number') return null;
+      return parsed;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  function saveProgress(setKey, index, score) {
+    try {
+      localStorage.setItem(progressKey(setKey), JSON.stringify({ index: index, score: score }));
+    } catch (e) { /* localStorage unavailable — progress simply won't be saved */ }
+  }
+
+  function clearProgress(setKey) {
+    try {
+      localStorage.removeItem(progressKey(setKey));
+    } catch (e) { /* ignore */ }
+  }
+
+  // ---------- Category tests ----------
+  function renderCategoryTests(tests, categoryName) {
+    const inCategory = tests.filter(t => (t.category || 'Other') === categoryName);
+    const container = document.getElementById('categoryTestSections');
+    container.innerHTML = '';
+
+    const grid = document.createElement('div');
+    grid.className = 'grid';
+
+    // Alphabetical by name, regardless of completion status.
+    const byName = (a, b) => (a.shortLabel || a.label).localeCompare(b.shortLabel || b.label);
+    inCategory.slice().sort(byName).forEach(t => {
+      const card = document.createElement('div');
+      card.className = 'test-card' + (t.completed ? ' completed' : '');
+      const saved = !t.completed ? getSavedProgress(t.key) : null;
+      const inProgress = !!(saved && saved.index > 0);
+      const passed = t.completed && t.bestPct >= PASS_THRESHOLD;
+      card.innerHTML =
+        '<h2>' + (t.shortLabel || t.label) + '</h2>' +
+        '<p class="meta">' + t.totalQuestions + ' question' + (t.totalQuestions === 1 ? '' : 's') + '</p>' +
+        (t.completed
+          ? '<span class="done-badge ' + (passed ? 'passed' : 'failed') + '">' +
+              (passed ? '&#10003; Passed' : '&#10005; Failed') + ' — ' + t.bestPct + '%</span>' +
+            '<button class="start retake">Retake Test</button>'
+          : '<button class="start' + (inProgress ? ' resume' : '') + '">' + (inProgress ? 'Resume Test' : 'Start Test') + '</button>');
+      card.querySelector('.start').addEventListener('click', () => enterQuiz(t.key, t.label, t.shortLabel));
+      grid.appendChild(card);
+    });
+
+    container.appendChild(grid);
+    const completedCount = inCategory.filter(t => t.completed).length;
+    document.getElementById('categoryProgressLabel').textContent =
+      completedCount + ' of ' + inCategory.length + ' completed';
+  }
+
+  function enterCategoryView(categoryName) {
+    currentCategory = categoryName;
+    document.getElementById('categoryTitle').textContent = categoryName;
+    document.getElementById('categoryProgressLabel').textContent = '';
+    showView(categoryView);
+
+    // Reuse the list already fetched for the dashboard instead of re-querying the
+    // server (which re-scans every quiz sheet) on every single category click.
+    if (cachedTests) {
+      renderCategoryTests(cachedTests, categoryName);
+      return;
+    }
+
+    document.getElementById('categoryTestSections').innerHTML = '<div class="loading">Loading tests...</div>';
+    google.script.run
+      .withSuccessHandler((tests) => {
+        cachedTests = tests;
+        renderCategoryTests(tests, categoryName);
+      })
+      .withFailureHandler((err) => {
+        document.getElementById('categoryTestSections').innerHTML = '<p style="color:#b3261e;">Could not load tests.</p>';
+      })
+      .getTestListForStudent(student.id);
+  }
+
+  document.getElementById('categoryBackBtn').addEventListener('click', () => {
+    enterDashboard();
+  });
+
+  document.getElementById('backBtn').addEventListener('click', () => {
+    if (currentCategory) {
+      enterCategoryView(currentCategory);
+    } else {
+      enterDashboard();
+    }
+  });
+
+  document.getElementById('resultsBackBtn').addEventListener('click', () => {
+    enterDashboard();
+  });
+
+  // ---------- Quiz ----------
+  function enterQuiz(setKey, label, shortLabel) {
+    currentSetKey = setKey;
+    currentTitle = label;
+    document.getElementById('testTitle').textContent = shortLabel || label;
+    document.getElementById('progressLabel').textContent = '';
+    document.getElementById('quizContainer').innerHTML = '<div class="loading">Loading questions...</div>';
+    showView(quizView);
+
+    google.script.run
+      .withSuccessHandler((questions) => {
+        currentQuestions = questions;
+        const saved = getSavedProgress(setKey);
+        const validSaved = saved && saved.index > 0 && saved.index < questions.length;
+        renderQuiz(questions, label, shortLabel, setKey, validSaved ? saved.index : 0, validSaved ? saved.score : 0);
+      })
+      .withFailureHandler((err) => {
+        const msg = (err && err.message) ? err.message : 'Could not load questions.';
+        document.getElementById('quizContainer').innerHTML =
+          '<p style="text-align:center;color:#b3261e;">' + msg + '</p>';
+      })
+      .getQuestionSet(setKey, student.id);
+  }
+
+  function renderQuiz(questions, title, displayTitle, setKey, startIndex, startScore) {
+    const container = document.getElementById('quizContainer');
+    const progressEl = document.getElementById('progressLabel');
+    let currentIndex = startIndex || 0;
+    let score = startScore || 0;
+
+    function renderQuestion() {
+      const q = questions[currentIndex];
+      let answered = false;
+      container.innerHTML = '';
+
+      const card = document.createElement('div');
+      card.className = 'q-card';
+
+      const num = document.createElement('div');
+      num.className = 'q-num';
+      num.textContent = 'Question ' + (currentIndex + 1) + ' of ' + questions.length;
+      card.appendChild(num);
+
+      const text = document.createElement('p');
+      text.className = 'q-text';
+      text.textContent = q.question;
+      card.appendChild(text);
+
+      const choiceEls = [];
+      ['A', 'B', 'C', 'D'].forEach(letter => {
+        const choiceText = q.choices[letter];
+        if (!choiceText) return;
+        const wrap = document.createElement('div');
+        wrap.className = 'choice';
+        wrap.dataset.letter = letter;
+        wrap.textContent = letter + '. ' + choiceText;
+        card.appendChild(wrap);
+        choiceEls.push(wrap);
+      });
+
+      const rationale = document.createElement('div');
+      rationale.className = 'rationale';
+      rationale.innerHTML = '<strong>Rationale:</strong> ' + q.rationale;
+      card.appendChild(rationale);
+
+      const navBar = document.createElement('div');
+      navBar.className = 'submit-bar';
+      const nextBtn = document.createElement('button');
+      nextBtn.type = 'button';
+      nextBtn.className = 'start';
+      nextBtn.style.padding = '13px 40px';
+      nextBtn.style.display = 'none';
+      nextBtn.textContent = (currentIndex === questions.length - 1) ? 'Finish Test' : 'Next Question';
+      navBar.appendChild(nextBtn);
+
+      choiceEls.forEach(wrap => {
+        wrap.addEventListener('click', () => {
+          if (answered) return;
+          answered = true;
+          const letter = wrap.dataset.letter;
+          choiceEls.forEach(ch => {
+            ch.style.pointerEvents = 'none';
+            if (ch.dataset.letter === q.answer) {
+              ch.classList.add('correct');
+            } else if (ch.dataset.letter === letter) {
+              ch.classList.add('incorrect');
+            }
+          });
+          rationale.classList.add('show');
+          if (letter === q.answer) score++;
+          nextBtn.style.display = 'inline-block';
+          navBar.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        });
+      });
+
+      nextBtn.addEventListener('click', () => {
+        if (currentIndex < questions.length - 1) {
+          currentIndex++;
+          saveProgress(setKey, currentIndex, score);
+          renderQuestion();
+        } else {
+          finishQuiz();
+        }
+      });
+
+      container.appendChild(card);
+      container.appendChild(navBar);
+      progressEl.textContent = 'Question ' + (currentIndex + 1) + ' of ' + questions.length;
+    }
+
+    function finishQuiz() {
+      clearProgress(setKey);
+      const pct = Math.round((score / questions.length) * 100);
+      const passed = pct >= PASS_THRESHOLD;
+      container.innerHTML = '';
+      const banner = document.createElement('div');
+      banner.className = 'result-banner';
+      banner.innerHTML =
+        '<div class="score">' + score + ' / ' + questions.length + '</div>' +
+        '<div class="pass-fail ' + (passed ? 'passed' : 'failed') + '">' + (passed ? 'PASSED' : 'FAILED') + '</div>' +
+        '<div class="pct">' + pct + '% — ' + (displayTitle || title) + '</div>' +
+        '<button class="submit retake-btn">Retake Test</button>';
+      container.appendChild(banner);
+      banner.querySelector('.retake-btn').addEventListener('click', () => enterQuiz(setKey, title, displayTitle));
+      progressEl.textContent = (passed ? 'Passed' : 'Failed') + ' — ' + pct + '%';
+
+      google.script.run.saveResult({
+        studentId: student.id,
+        studentName: student.name,
+        test: title,
+        score: score,
+        total: questions.length,
+        pct: pct
+      });
+    }
+
+    renderQuestion();
+  }
+
+  // ---------- Results (admin) ----------
+  function enterResults() {
+    document.getElementById('resultsSubtitle').textContent = '';
+    document.getElementById('resultsContainer').innerHTML = '<div class="loading">Loading results...</div>';
+    showView(resultsView);
+
+    google.script.run
+      .withSuccessHandler(renderResults)
+      .withFailureHandler((err) => {
+        document.getElementById('resultsContainer').innerHTML = '<p style="text-align:center;color:#b3261e;">Could not load results.</p>';
+      })
+      .getResultsSummary(student.id);
+  }
+
+  function renderResults(data) {
+    const container = document.getElementById('resultsContainer');
+    container.innerHTML = '';
+
+    if (!data.tests || data.tests.length === 0) {
+      container.innerHTML = '<p style="text-align:center;color:#6b7a76;">No quiz attempts recorded yet.</p>';
+      return;
+    }
+
+    const totalAttempts = data.tests.reduce((s, t) => s + t.attempts, 0);
+    const uniqueAll = new Set();
+    Object.keys(data.leaderboard).forEach(test => {
+      data.leaderboard[test].forEach(r => uniqueAll.add(r.studentId));
+    });
+
+    const statRow = document.createElement('div');
+    statRow.className = 'stat-row';
+    statRow.innerHTML =
+      '<div class="stat-box"><div class="num">' + totalAttempts + '</div><div class="lbl">Total Attempts</div></div>' +
+      '<div class="stat-box"><div class="num">' + uniqueAll.size + '</div><div class="lbl">Students Participated</div></div>' +
+      '<div class="stat-box"><div class="num">' + data.tests.length + '</div><div class="lbl">Test Sets</div></div>';
+    container.appendChild(statRow);
+
+    const tabs = document.createElement('div');
+    tabs.className = 'test-tabs';
+    const tableWrap = document.createElement('div');
+
+    data.tests.forEach((t, idx) => {
+      const tab = document.createElement('button');
+      tab.className = 'test-tab' + (idx === 0 ? ' active' : '');
+      tab.textContent = t.label + ' (' + t.attempts + ' attempts, ' + t.avgPct + '% avg)';
+      tab.addEventListener('click', () => {
+        tabs.querySelectorAll('.test-tab').forEach(b => b.classList.remove('active'));
+        tab.classList.add('active');
+        renderLeaderboard(t.label);
+      });
+      tabs.appendChild(tab);
+    });
+
+    container.appendChild(tabs);
+    container.appendChild(tableWrap);
+
+    function renderLeaderboard(testLabel) {
+      const rows = (data.leaderboard[testLabel] || []).slice();
+      tableWrap.innerHTML = '';
+      if (rows.length === 0) {
+        tableWrap.innerHTML = '<p style="color:#6b7a76;">No attempts for this test yet.</p>';
+        return;
+      }
+      const table = document.createElement('table');
+      table.className = 'leaderboard';
+      table.innerHTML =
+        '<thead><tr><th></th><th>Student</th><th>ID</th><th>Best Score</th><th>Best %</th><th>Attempts</th><th>Last Attempt</th></tr></thead>';
+      const tbody = document.createElement('tbody');
+      rows.forEach((r, i) => {
+        const tr = document.createElement('tr');
+        const dateStr = r.lastDate ? new Date(r.lastDate).toLocaleString() : '';
+        tr.innerHTML =
+          '<td class="rank-cell">' + (i + 1) + '</td>' +
+          '<td>' + r.studentName + '</td>' +
+          '<td>' + r.studentId + '</td>' +
+          '<td>' + r.bestScore + ' / ' + r.bestTotal + '</td>' +
+          '<td class="pct-cell">' + r.bestPct + '%</td>' +
+          '<td>' + r.attempts + '</td>' +
+          '<td>' + dateStr + '</td>';
+        tbody.appendChild(tr);
+      });
+      table.appendChild(tbody);
+      tableWrap.appendChild(table);
+    }
+
+    renderLeaderboard(data.tests[0].label);
+  }
+</script>
+</body>
+</html>
