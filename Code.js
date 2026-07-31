@@ -167,7 +167,22 @@ function getTestListForStudent(studentId) {
   });
 }
 
+// This scans the entire (and ever-growing) Quiz Results sheet, so it's the
+// slowest part of loading the dashboard/category view — cache each student's
+// result briefly. saveResult() below clears that student's entry immediately
+// so a just-finished test still shows up right away.
+const COMPLETED_CACHE_SECONDS = 60;
+
+function completedCacheKey_(studentId) {
+  return 'completed_' + String(studentId || '').trim().toLowerCase();
+}
+
 function getCompletedTestsForStudent_(studentId) {
+  const cache = CacheService.getScriptCache();
+  const cacheKey = completedCacheKey_(studentId);
+  const cached = cache.get(cacheKey);
+  if (cached) return JSON.parse(cached);
+
   const result = {};
   const ss = SpreadsheetApp.getActiveSpreadsheet();
   const sheet = ss.getSheetByName('Quiz Results');
@@ -189,6 +204,8 @@ function getCompletedTestsForStudent_(studentId) {
       result[test] = { bestScore: score, bestTotal: total, bestPct: pct };
     }
   }
+
+  cache.put(cacheKey, JSON.stringify(result), COMPLETED_CACHE_SECONDS);
   return result;
 }
 
@@ -242,6 +259,7 @@ function saveResult(record) {
     record.total,
     record.pct
   ]);
+  CacheService.getScriptCache().remove(completedCacheKey_(record.studentId));
   return { ok: true };
 }
 
