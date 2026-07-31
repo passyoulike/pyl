@@ -117,6 +117,11 @@
     border-radius: 8px; padding: 9px 12px; font-size: 13px; margin-bottom: 16px;
   }
   .success.show { display: block; }
+  .maintenance-banner {
+    display: none; background: #fff8ea; color: #7a5a0a; border: 1px solid rgba(217,164,65,0.5);
+    border-radius: 8px; padding: 9px 12px; font-size: 13px; margin-bottom: 16px;
+  }
+  .maintenance-banner.show { display: block; }
   .footer-note { text-align: center; font-size: 11.5px; color: var(--muted); margin-top: 22px; line-height: 1.5; }
   .footer-note a { color: var(--primary); font-weight: 600; text-decoration: none; }
   .footer-note a:hover { text-decoration: underline; }
@@ -261,6 +266,7 @@
     <p class="subtitle">Nursing Practice Questions</p>
     <p class="footer-note" style="margin-top:0;margin-bottom:22px;">New here? <a href="#" id="showRegisterLink">Register an account</a></p>
 
+    <div class="maintenance-banner" id="maintenanceBanner">&#9888; The app is currently under maintenance. Only admins can log in right now.</div>
     <div class="error" id="loginError">Invalid Email Address or Password. Please try again.</div>
 
     <form id="loginForm" autocomplete="off">
@@ -392,7 +398,7 @@
   // withSuccessHandler/withFailureHandler/<fnName>(...) chain so none of the
   // call sites below needed to change.
   const API_BASE = 'https://script.google.com/macros/s/AKfycbyEwhM7UM-dZVi4P_UtLGPBohGTxoSU-S5sIXoxVIlaTTMWqcprN4hJK6dJ-ejwPhG2/exec';
-  const API_METHODS = ['authenticate', 'registerMember', 'getTestListForStudent', 'getQuestionSet', 'saveResult', 'getResultsSummary'];
+  const API_METHODS = ['authenticate', 'registerMember', 'getTestListForStudent', 'getQuestionSet', 'saveResult', 'getResultsSummary', 'getMaintenanceStatus', 'setMaintenanceMode'];
 
   function makeApiRunner_() {
     let successFn = null;
@@ -470,6 +476,13 @@
     });
   }
 
+  // Shown on the login screen so students know before even trying to log in;
+  // authenticate() still enforces this server-side regardless of what the
+  // banner shows (e.g. if it's stale from before an admin re-enabled login).
+  callServer_('getMaintenanceStatus').then((res) => {
+    document.getElementById('maintenanceBanner').classList.toggle('show', !!(res && res.enabled));
+  }).catch(() => {});
+
   loginForm.addEventListener('submit', (e) => {
     e.preventDefault();
     loginError.classList.remove('show');
@@ -493,6 +506,9 @@
         enterDashboard(testsPromise);
       } else if (res && res.pending) {
         loginError.textContent = 'Your account is still pending approval. Please check back once it has been verified.';
+        loginError.classList.add('show');
+      } else if (res && res.maintenance) {
+        loginError.textContent = 'The app is currently under maintenance. Please check back later.';
         loginError.classList.add('show');
       } else {
         loginError.textContent = 'Invalid Email Address or Password. Please try again.';
@@ -583,6 +599,37 @@
             '<button class="start">View Results</button>';
           adminCard.querySelector('.start').addEventListener('click', enterResults);
           adminSlot.appendChild(adminCard);
+
+          const maintenanceCard = document.createElement('div');
+          maintenanceCard.className = 'test-card admin-card';
+          maintenanceCard.style.marginBottom = '24px';
+          maintenanceCard.innerHTML =
+            '<h2>Maintenance Mode</h2>' +
+            '<p class="meta">When on, students can\'t log in — only admins can. Use this while editing quiz content.</p>' +
+            '<button class="start" id="maintenanceToggleBtn" disabled>Loading...</button>';
+          adminSlot.appendChild(maintenanceCard);
+
+          const maintBtn = document.getElementById('maintenanceToggleBtn');
+          let maintenanceEnabled = false;
+          function renderMaintenanceBtn() {
+            maintBtn.disabled = false;
+            maintBtn.textContent = maintenanceEnabled ? 'Turn Maintenance Mode OFF' : 'Turn Maintenance Mode ON';
+            maintBtn.classList.toggle('retake', maintenanceEnabled);
+          }
+          callServer_('getMaintenanceStatus').then((res) => {
+            maintenanceEnabled = !!(res && res.enabled);
+            renderMaintenanceBtn();
+          });
+          maintBtn.addEventListener('click', () => {
+            maintBtn.disabled = true;
+            maintBtn.textContent = 'Updating...';
+            callServer_('setMaintenanceMode', student.id, !maintenanceEnabled).then((res) => {
+              maintenanceEnabled = !!(res && res.enabled);
+              renderMaintenanceBtn();
+            }).catch(() => {
+              renderMaintenanceBtn();
+            });
+          });
         }
 
         const byCategory = {};
