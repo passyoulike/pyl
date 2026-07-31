@@ -40,11 +40,42 @@ function isAdminId_(id) {
 }
 
 function doGet(e) {
+  // ?action=<fnName>&args=<JSON array> switches this into a plain JSON API,
+  // used by the standalone frontend hosted on GitHub Pages (which can't use
+  // google.script.run since it's not served by HtmlService). No action param
+  // means a normal visit, so the built-in HTML app still works as before.
+  if (e && e.parameter && e.parameter.action) {
+    return handleApiRequest_(e.parameter.action, e.parameter.args);
+  }
   return HtmlService.createTemplateFromFile('Index')
     .evaluate()
         .setTitle('Nurse Radi')
     .addMetaTag('viewport', 'width=device-width, initial-scale=1')
     .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
+}
+
+// Functions callable through the ?action= JSON API. Deliberately a fixed
+// allowlist rather than global-function lookup, so no other server function
+// becomes reachable just by naming it in a URL.
+const API_FUNCTIONS_ = {
+  authenticate: authenticate,
+  getTestListForStudent: getTestListForStudent,
+  getQuestionSet: getQuestionSet,
+  saveResult: saveResult,
+  getResultsSummary: getResultsSummary
+};
+
+function handleApiRequest_(action, argsJson) {
+  let payload;
+  try {
+    const fn = API_FUNCTIONS_[action];
+    if (!fn) throw new Error('Unknown action: ' + action);
+    const args = argsJson ? JSON.parse(argsJson) : [];
+    payload = { ok: true, result: fn.apply(null, args) };
+  } catch (err) {
+    payload = { ok: false, error: (err && err.message) ? err.message : String(err) };
+  }
+  return ContentService.createTextOutput(JSON.stringify(payload)).setMimeType(ContentService.MimeType.JSON);
 }
 
 function include(filename) {
