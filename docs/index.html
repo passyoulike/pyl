@@ -158,6 +158,13 @@
     width: fit-content;
   }
   .done-badge.failed { background: rgba(179,38,30,0.12); color: var(--incorrect); }
+  .search-box {
+    width: 100%; padding: 11px 13px; margin-bottom: 18px; border: 1px solid #d6ddda; border-radius: 8px;
+    font-size: 16px; background: #fbfdfc; color: var(--text); font-family: inherit;
+  }
+  .search-box:focus {
+    outline: none; border-color: var(--primary); box-shadow: 0 0 0 3px rgba(15,92,77,0.15);
+  }
   .category-section { margin-bottom: 30px; }
   .category-title {
     font-size: 13px; font-weight: 700; color: var(--muted); text-transform: uppercase;
@@ -294,6 +301,7 @@
     <button class="pill-btn" id="categoryBackBtn">Back to Categories</button>
   </header>
   <main>
+    <input type="text" id="categorySearch" class="search-box" placeholder="Search tests...">
     <div id="categoryTestSections">
       <div class="loading">Loading tests...</div>
     </div>
@@ -544,17 +552,30 @@
   }
 
   // ---------- Category tests ----------
-  function renderCategoryTests(tests, categoryName) {
+  function renderCategoryTests(tests, categoryName, searchTerm) {
     const inCategory = tests.filter(t => (t.category || 'Other') === categoryName);
+    const term = (searchTerm || '').trim().toLowerCase();
+    const visible = term
+      ? inCategory.filter(t => (t.shortLabel || t.label).toLowerCase().indexOf(term) !== -1)
+      : inCategory;
+
     const container = document.getElementById('categoryTestSections');
     container.innerHTML = '';
+
+    if (visible.length === 0) {
+      container.innerHTML = '<p style="text-align:center;color:#6b7a76;">No tests match your search.</p>';
+      const completedCount0 = inCategory.filter(t => t.completed).length;
+      document.getElementById('categoryProgressLabel').textContent =
+        completedCount0 + ' of ' + inCategory.length + ' completed';
+      return;
+    }
 
     const grid = document.createElement('div');
     grid.className = 'grid';
 
     // Alphabetical by name, regardless of completion status.
     const byName = (a, b) => (a.shortLabel || a.label).localeCompare(b.shortLabel || b.label);
-    inCategory.slice().sort(byName).forEach(t => {
+    visible.slice().sort(byName).forEach(t => {
       const card = document.createElement('div');
       card.className = 'test-card' + (t.completed ? ' completed' : '');
       const saved = !t.completed ? getSavedProgress(t.key) : null;
@@ -578,10 +599,18 @@
       completedCount + ' of ' + inCategory.length + ' completed';
   }
 
+  const categorySearchInput = document.getElementById('categorySearch');
+  categorySearchInput.addEventListener('input', () => {
+    if (cachedTests && currentCategory) {
+      renderCategoryTests(cachedTests, currentCategory, categorySearchInput.value);
+    }
+  });
+
   function enterCategoryView(categoryName) {
     currentCategory = categoryName;
     document.getElementById('categoryTitle').textContent = categoryName;
     document.getElementById('categoryProgressLabel').textContent = '';
+    categorySearchInput.value = '';
     showView(categoryView);
 
     // Reuse the list already fetched for the dashboard instead of re-querying the
