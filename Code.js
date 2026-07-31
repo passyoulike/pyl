@@ -302,9 +302,13 @@ function submitContactRequest(fields) {
 // before "Question", as some tabs do) without breaking parsing. Falls back
 // to the original fixed layout (Question, A-D, Correct Answer, Rationale in
 // columns A-G) if the header row isn't recognizable at all.
+const FALLBACK_LAYOUT_ = { question: 0, A: 1, B: 2, C: 3, D: 4, answer: 5, rationale: 6 };
+
 function getColumnLayout_(sheetName) {
   const sheet = getSheet_(sheetName);
   const lastCol = sheet.getLastColumn();
+  if (lastCol === 0) return FALLBACK_LAYOUT_; // empty sheet — nothing to read a header from
+
   const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) {
     return String(h || '').trim().toLowerCase();
   });
@@ -327,7 +331,7 @@ function getColumnLayout_(sheetName) {
   };
 
   if (layout.question === -1 || layout.answer === -1) {
-    return { question: 0, A: 1, B: 2, C: 3, D: 4, answer: 5, rationale: 6 };
+    return FALLBACK_LAYOUT_;
   }
   return layout;
 }
@@ -359,16 +363,22 @@ function getTestList() {
   const cached = cache.get('testList');
   if (cached) return JSON.parse(cached);
 
+  // A single malformed/unreadable sheet shouldn't take down the whole
+  // dashboard for every student — skip it and keep going.
   const tests = getQuestionSheetNames_().map(function (name) {
-    const parts = splitSheetName_(name);
-    return {
-      key: name,
-      label: name,
-      shortLabel: parts.topic,
-      category: CATEGORY_PREFIX_MAP[parts.prefix] || parts.prefix,
-      totalQuestions: countQuestions_(name)
-    };
-  }).filter(function (t) { return t.totalQuestions > 0; });
+    try {
+      const parts = splitSheetName_(name);
+      return {
+        key: name,
+        label: name,
+        shortLabel: parts.topic,
+        category: CATEGORY_PREFIX_MAP[parts.prefix] || parts.prefix,
+        totalQuestions: countQuestions_(name)
+      };
+    } catch (err) {
+      return null;
+    }
+  }).filter(function (t) { return t && t.totalQuestions > 0; });
 
   cache.put('testList', JSON.stringify(tests), TEST_LIST_CACHE_SECONDS);
   return tests;
