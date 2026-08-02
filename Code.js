@@ -3,6 +3,13 @@
 // except these reserved sheets is treated as a quiz set.
 const RESERVED_SHEETS = ['Members', 'Quiz Results', 'Contact Us'];
 
+// Non-quiz utility/admin tabs that have accumulated in the spreadsheet (a
+// pivot table, a roster, duplicated backup copies, etc.) — excluded by name
+// so they're never scanned at all, not even the cheap header check.
+const IGNORED_SHEETS = [
+  'MCN 2 - P1', 'Register', 'Pivot Table 1', 'Results', 'Radi', 'Copy of Radi', 'Copy of Med Surg - '
+];
+
 // Where "Contact Us" ticket notifications are sent so you can just reply
 // directly from your inbox (each notification sets Reply-To to the
 // submitter's email).
@@ -34,7 +41,9 @@ function splitSheetName_(name) {
 function getQuestionSheetNames_() {
   return SpreadsheetApp.getActiveSpreadsheet().getSheets()
     .map(function (s) { return s.getName(); })
-    .filter(function (name) { return RESERVED_SHEETS.indexOf(name) === -1; });
+    .filter(function (name) {
+      return RESERVED_SHEETS.indexOf(name) === -1 && IGNORED_SHEETS.indexOf(name) === -1;
+    });
 }
 
 // Student IDs allowed to view the class results summary.
@@ -66,6 +75,8 @@ const API_FUNCTIONS_ = {
   authenticate: authenticate,
   registerMember: registerMember,
   getTestListForStudent: getTestListForStudent,
+  getCategorySummary: getCategorySummary,
+  getTestsForCategory: getTestsForCategory,
   getQuestionSet: getQuestionSet,
   saveResult: saveResult,
   getResultsSummary: getResultsSummary,
@@ -370,11 +381,16 @@ function countQuestions_(sheetName) {
   return count;
 }
 
-// Building this list means reading every quiz sheet in full just to count its
-// questions — slow, and identical for every student. Cache it for a few
-// minutes so concurrent students and repeat dashboard visits don't each pay
-// that cost. A newly added sheet may take up to this long to appear.
-const TEST_LIST_CACHE_SECONDS = 300;
+// Building this list means reading quiz sheets in full just to count their
+// questions — slow, and identical for every student. Cache it so concurrent
+// students and repeat visits don't each pay that cost. Longer than it looks
+// like it should be (30 min, not 5) because the cold-cache path is not just
+// slow but occasionally hits Google's own timeout for serving the web app
+// request, returning an HTML error page instead of JSON — cutting how often
+// that path runs at all is the most reliable fix available without a bigger
+// architecture change. A newly added quiz sheet may take up to this long to
+// appear in the app.
+const TEST_LIST_CACHE_SECONDS = 1800;
 
 function getTestList() {
   const cache = CacheService.getScriptCache();
@@ -406,6 +422,82 @@ function getTestList() {
 // based on their best recorded attempt in the Quiz Results sheet.
 function getTestListForStudent(studentId) {
   const tests = getTestList();
+  const completedMap = getCompletedTestsForStudent_(studentId);
+  return tests.map(function (t) {
+    const c = completedMap[t.label];
+    return {
+      key: t.key,
+      label: t.label,
+      shortLabel: t.shortLabel,
+      category: t.category,
+      totalQuestions: t.totalQuestions,
+      completed: !!c,
+      bestPct: c ? c.bestPct : null,
+      bestScore: c ? c.bestScore : null,
+      bestTotal: c ? c.bestTotal : null
+    };
+  });
+}
+
+// ---------- Lazy per-category loading ----------
+// getTestList()/getTestListForStudent() scan every quiz sheet across every
+// category, which is expensive with 40+ tabs. These two split that into a
+// cheap dashboard-level summary (sheet names/counts only, no per-sheet
+// content reads) and a per-category scan that only touches the sheets in
+// the category actually being opened — the dashboard no longer pays for
+// categories the student never clicks into.
+
+function getCategorySummary() {
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'categorySummary';
+  const cached = cache.get(cacheKey);
+  if (cached) return JSON.parse(cached);
+
+  const byCategory = {};
+  getQuestionSheetNames_().forEach(function (name) {
+    const parts = splitSheetName_(name);
+    const cat = CATEGORY_PREFIX_MAP[parts.prefix] || parts.prefix;
+    byCategory[cat] = (byCategory[cat] || 0) + 1;
+  });
+
+  const summary = Object.keys(byCategory).map(function (cat) {
+    return { category: cat, testCount: byCategory[cat] };
+  });
+
+  cache.put(cacheKey, JSON.stringify(summary), TEST_LIST_CACHE_SECONDS);
+  return summary;
+}
+
+function getTestsForCategory(categoryName, studentId) {
+  const cache = CacheService.getScriptCache();
+  const cacheKey = 'categoryTests_' + categoryName;
+  let tests = cache.get(cacheKey);
+
+  if (tests) {
+    tests = JSON.parse(tests);
+  } else {
+    tests = getQuestionSheetNames_().filter(function (name) {
+      const parts = splitSheetName_(name);
+      const cat = CATEGORY_PREFIX_MAP[parts.prefix] || parts.prefix;
+      return cat === categoryName;
+    }).map(function (name) {
+      try {
+        const parts = splitSheetName_(name);
+        return {
+          key: name,
+          label: name,
+          shortLabel: parts.topic,
+          category: categoryName,
+          totalQuestions: countQuestions_(name)
+        };
+      } catch (err) {
+        return null;
+      }
+    }).filter(function (t) { return t && t.totalQuestions > 0; });
+
+    cache.put(cacheKey, JSON.stringify(tests), TEST_LIST_CACHE_SECONDS);
+  }
+
   const completedMap = getCompletedTestsForStudent_(studentId);
   return tests.map(function (t) {
     const c = completedMap[t.label];

@@ -480,7 +480,6 @@
   let currentSetKey = null;
   let currentTitle = '';
   let currentCategory = null;
-  let cachedTests = null; // populated by enterDashboard(); reused by enterCategoryView() to avoid a redundant server round-trip
 
   const CATEGORY_ORDER = ['MCN - Maternal & Child', 'Med Surg'];
   const PASS_THRESHOLD = 75; // percent score needed to pass a test
@@ -540,17 +539,17 @@
     loginBtn.textContent = 'Checking...';
 
     // Each Apps Script round trip costs 1.5-3s regardless of caching, so fire the
-    // dashboard's test list at the same time as the login check instead of only
-    // starting it after login succeeds — cuts the wait roughly in half. It only
-    // needs the student ID already typed in, not the auth result.
-    const testsPromise = callServer_('getTestListForStudent', id).catch(() => null);
+    // dashboard's category summary at the same time as the login check instead
+    // of only starting it after login succeeds — cuts the wait roughly in half.
+    // It doesn't depend on the auth result (or even the student id) at all.
+    const summaryPromise = callServer_('getCategorySummary').catch(() => null);
 
     callServer_('authenticate', id, pw).then((res) => {
       loginBtn.disabled = false;
       loginBtn.textContent = 'Log In';
       if (res && res.ok) {
         student = { id: res.id, name: res.name, isAdmin: !!res.isAdmin };
-        enterDashboard(testsPromise);
+        enterDashboard(summaryPromise);
       } else if (res && res.pending) {
         loginError.textContent = 'Your account is still pending approval. Please check back once it has been verified.';
         loginError.classList.add('show');
@@ -745,16 +744,19 @@
   });
 
   // ---------- Dashboard (category selection) ----------
-  function enterDashboard(prefetchedTestsPromise) {
+  function enterDashboard(prefetchedSummaryPromise) {
     document.getElementById('welcomeMsg').textContent = 'Welcome, ' + student.name + '!';
     document.getElementById('whoami').textContent = 'ID: ' + student.id;
     currentCategory = null;
     showView(dashboardView);
 
-    const testsPromise = prefetchedTestsPromise || callServer_('getTestListForStudent', student.id);
-    testsPromise.then((tests) => {
-        if (!tests) throw new Error('Could not load categories.');
-        cachedTests = tests;
+    // Only fetches category names/counts, not each category's full test list —
+    // scanning every quiz sheet up front (40+ tabs) was the main reason the
+    // dashboard was slow. Each category's actual tests are loaded lazily by
+    // enterCategoryView() only when that category is opened.
+    const summaryPromise = prefetchedSummaryPromise || callServer_('getCategorySummary');
+    summaryPromise.then((summary) => {
+        if (!summary) throw new Error('Could not load categories.');
         const adminSlot = document.getElementById('adminSlot');
         adminSlot.innerHTML = '';
 
@@ -802,13 +804,9 @@
         }
 
         const byCategory = {};
-        tests.forEach(t => {
-          const cat = t.category || 'Other';
-          if (!byCategory[cat]) byCategory[cat] = [];
-          byCategory[cat].push(t);
-        });
+        summary.forEach(s => { byCategory[s.category] = s.testCount; });
 
-        const orderedCategories = CATEGORY_ORDER.filter(c => byCategory[c]).concat(
+        const orderedCategories = CATEGORY_ORDER.filter(c => byCategory[c] !== undefined).concat(
           Object.keys(byCategory).filter(c => CATEGORY_ORDER.indexOf(c) === -1)
         );
 
@@ -816,17 +814,13 @@
         grid.innerHTML = '';
 
         orderedCategories.forEach(cat => {
-          const list = byCategory[cat];
-          const completedCount = list.filter(t => t.completed).length;
-          const pct = Math.round((completedCount / list.length) * 100);
+          const count = byCategory[cat];
 
           const card = document.createElement('div');
           card.className = 'category-card';
           card.innerHTML =
             '<h2>' + cat + '</h2>' +
-            '<p class="meta">' + list.length + ' practice test' + (list.length === 1 ? '' : 's') + '</p>' +
-            '<div class="cat-progress-track"><div class="cat-progress-fill" style="width:' + pct + '%"></div></div>' +
-            '<div class="cat-progress-label">' + completedCount + ' of ' + list.length + ' completed</div>';
+            '<p class="meta">' + count + ' practice test' + (count === 1 ? '' : 's') + '</p>';
           card.addEventListener('click', () => enterCategoryView(cat));
           grid.appendChild(card);
         });
@@ -838,7 +832,6 @@
 
   document.getElementById('logoutBtn').addEventListener('click', () => {
     student = null;
-    cachedTests = null;
     document.getElementById('studentId').value = '';
     document.getElementById('password').value = '';
     showView(loginView);
@@ -874,8 +867,9 @@
   }
 
   // ---------- Category tests ----------
-  function renderCategoryTests(tests, categoryName, searchTerm) {
-    const inCategory = tests.filter(t => (t.category || 'Other') === categoryName);
+  let currentCategoryTests = []; // populated by enterCategoryView(); re-filtered locally as the search box is typed in
+
+  function renderCategoryTests(inCategory, searchTerm) {
     const term = (searchTerm || '').trim().toLowerCase();
     const visible = term
       ? inCategory.filter(t => (t.shortLabel || t.label).toLowerCase().indexOf(term) !== -1)
@@ -923,9 +917,7 @@
 
   const categorySearchInput = document.getElementById('categorySearch');
   categorySearchInput.addEventListener('input', () => {
-    if (cachedTests && currentCategory) {
-      renderCategoryTests(cachedTests, currentCategory, categorySearchInput.value);
-    }
+    renderCategoryTests(currentCategoryTests, categorySearchInput.value);
   });
 
   function enterCategoryView(categoryName) {
@@ -935,23 +927,16 @@
     categorySearchInput.value = '';
     showView(categoryView);
 
-    // Reuse the list already fetched for the dashboard instead of re-querying the
-    // server (which re-scans every quiz sheet) on every single category click.
-    if (cachedTests) {
-      renderCategoryTests(cachedTests, categoryName);
-      return;
-    }
-
-    document.getElementById('categoryTestSections').innerHTML = '<div class="loading">Loading tests...</div>';
-    google.script.run
-      .withSuccessHandler((tests) => {
-        cachedTests = tests;
-        renderCategoryTests(tests, categoryName);
-      })
-      .withFailureHandler((err) => {
-        document.getElementById('categoryTestSections').innerHTML = '<p style="color:#b3261e;">Could not load tests.</p>';
-      })
-      .getTestListForStudent(student.id);
+    // Only scans the sheets belonging to this one category, not every quiz
+    // sheet across the whole app — that's what makes opening a category fast
+    // even though the dashboard itself no longer preloads this data.
+    document.getElementById('categoryTestSections').innerHTML = '<div class="loading">Loading tests... Please wait (up to 5 minutes based on your internet speed).</div>';
+    callServer_('getTestsForCategory', categoryName, student.id).then((tests) => {
+      currentCategoryTests = tests;
+      renderCategoryTests(tests);
+    }).catch(() => {
+      document.getElementById('categoryTestSections').innerHTML = '<p style="color:#b3261e;">Could not load tests.</p>';
+    });
   }
 
   document.getElementById('categoryBackBtn').addEventListener('click', () => {
