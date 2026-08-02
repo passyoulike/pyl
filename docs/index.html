@@ -400,8 +400,8 @@
         </div>
       </div>
       <div class="field">
-        <label for="regReferral">Referral Code</label>
-        <input type="text" id="regReferral" placeholder="Referral code" required>
+        <label for="regReferral">Referral Code (optional)</label>
+        <input type="text" id="regReferral" placeholder="Referral code (optional)">
       </div>
       <div class="field">
         <label for="regGcash">Gcash Confirmation Number</label>
@@ -497,7 +497,18 @@
         const args = Array.prototype.slice.call(arguments);
         const url = API_BASE + '?action=' + encodeURIComponent(name) + '&args=' + encodeURIComponent(JSON.stringify(args));
         fetch(url)
-          .then(function (r) { return r.json(); })
+          .then(function (r) {
+            return r.text().then(function (text) {
+              try {
+                return JSON.parse(text);
+              } catch (e) {
+                // Apps Script occasionally serves an HTML page instead of JSON
+                // (e.g. a transient Google-side error) — surface a readable
+                // message instead of a raw "Unexpected token '<'" parse error.
+                throw new Error('The server sent back an unexpected response. Please try again in a moment.');
+              }
+            });
+          })
           .then(function (payload) {
             if (payload && payload.ok) {
               if (successFn) successFn(payload.result);

@@ -150,11 +150,11 @@ function registerMember(fields) {
   const name = String((fields && fields.name) || '').trim();
   const email = String((fields && fields.email) || '').trim();
   const password = String((fields && fields.password) || '').trim();
-  const referralCode = String((fields && fields.referralCode) || '').trim();
+  const referralCode = String((fields && fields.referralCode) || '').trim(); // optional
   const gcashRef = String((fields && fields.gcashRef) || '').trim();
 
-  if (!name || !email || !password || !referralCode || !gcashRef) {
-    throw new Error('All fields are required.');
+  if (!name || !email || !password || !gcashRef) {
+    throw new Error('Name, email, password, and Gcash confirmation number are required.');
   }
 
   const sheet = getSheet_('Members');
@@ -170,6 +170,19 @@ function registerMember(fields) {
     sheet.getRange(1, 6).setValue('Status');
   }
   sheet.appendRow([email, name, password, referralCode, gcashRef, 'Pending']);
+
+  MailApp.sendEmail({
+    to: SUPPORT_NOTIFY_EMAIL,
+    replyTo: email,
+    subject: 'New Passyoulike registration: ' + name,
+    body: 'A new account is pending approval.\n\n' +
+      'Name: ' + name + '\n' +
+      'Email: ' + email + '\n' +
+      'Referral Code: ' + (referralCode || '(none)') + '\n' +
+      'Gcash Confirmation #: ' + gcashRef + '\n\n' +
+      'Approve by setting column F (Status) to "Approved" for this row in the Members sheet.'
+  });
+
   return { ok: true };
 }
 
