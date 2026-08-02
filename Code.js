@@ -312,17 +312,20 @@ function submitContactRequest(fields) {
 
 // Locates each question sheet's columns by header name instead of assuming a
 // fixed position, so a sheet can have extra columns (e.g. an "Item #" column
-// before "Question", as some tabs do) without breaking parsing. Falls back
-// to the original fixed layout (Question, A-D, Correct Answer, Rationale in
-// columns A-G) if the header row isn't recognizable at all.
-const FALLBACK_LAYOUT_ = { question: 0, A: 1, B: 2, C: 3, D: 4, answer: 5, rationale: 6 };
-
-function getColumnLayout_(sheetName) {
-  const sheet = getSheet_(sheetName);
-  const lastCol = sheet.getLastColumn();
-  if (lastCol === 0) return FALLBACK_LAYOUT_; // empty sheet — nothing to read a header from
-
-  const header = sheet.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) {
+// before "Question", as some tabs do) without breaking parsing. Returns null
+// if the header doesn't contain recognizable "Question"/"Answer" columns at
+// all — that means the tab isn't actually a quiz sheet (a pivot table, a
+// roster, a backup copy, etc.), and callers should skip it WITHOUT reading
+// the sheet's full data, since a spreadsheet can accumulate a lot of large
+// non-quiz tabs over time and reading all of them on every cache-cold
+// dashboard load is what was making loading slow.
+// Takes an already-fetched header row (rather than reading the sheet itself)
+// so callers can get the layout from the same getDataRange() call they use
+// for the sheet's actual rows — one spreadsheet call per sheet instead of
+// two. Reading each quiz sheet twice (once for the header, once for the
+// data) across 40+ tabs was the main reason loading was slow.
+function deriveColumnLayout_(headerRow) {
+  const header = (headerRow || []).map(function (h) {
     return String(h || '').trim().toLowerCase();
   });
 
@@ -343,17 +346,19 @@ function getColumnLayout_(sheetName) {
     rationale: find(['rationale'])
   };
 
-  if (layout.question === -1 || layout.answer === -1) {
-    return FALLBACK_LAYOUT_;
-  }
+  // No recognizable Question/Answer columns — not actually a quiz sheet
+  // (a pivot table, a roster, a backup copy, etc.).
+  if (layout.question === -1 || layout.answer === -1) return null;
   return layout;
 }
 
 // Counts gradable questions in a sheet the same way getQuestionSet() filters them,
 // so the count shown to students always matches what they'll actually be asked.
 function countQuestions_(sheetName) {
-  const layout = getColumnLayout_(sheetName);
   const data = getSheet_(sheetName).getDataRange().getValues();
+  if (data.length === 0) return 0;
+  const layout = deriveColumnLayout_(data[0]);
+  if (!layout) return 0;
   let count = 0;
   for (let i = 1; i < data.length; i++) {
     const row = data[i];
@@ -466,8 +471,10 @@ function getQuestionSet(setKey, studentId) {
     throw new Error('Unknown question set: ' + setKey);
   }
 
-  const layout = getColumnLayout_(sheetName);
   const data = getSheet_(sheetName).getDataRange().getValues();
+  const layout = data.length ? deriveColumnLayout_(data[0]) : null;
+  if (!layout) throw new Error('Unknown question set: ' + setKey);
+
   const questions = [];
 
   for (let i = 1; i < data.length; i++) {
