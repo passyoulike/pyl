@@ -363,11 +363,13 @@ function deriveColumnLayout_(headerRow) {
   return layout;
 }
 
-// Counts gradable questions in a sheet the same way getQuestionSet() filters them,
-// so the count shown to students always matches what they'll actually be asked.
-function countQuestions_(sheetName) {
-  const data = getSheet_(sheetName).getDataRange().getValues();
-  if (data.length === 0) return 0;
+// Counts gradable questions in already-fetched sheet data the same way
+// getQuestionSet() filters them, so the count shown to students always
+// matches what they'll actually be asked. Split from countQuestions_ so
+// getTestsForCategory() can reuse it against data fetched in one batch call
+// instead of a separate read per sheet.
+function countQuestionsFromData_(data) {
+  if (!data || data.length === 0) return 0;
   const layout = deriveColumnLayout_(data[0]);
   if (!layout) return 0;
   let count = 0;
@@ -381,16 +383,38 @@ function countQuestions_(sheetName) {
   return count;
 }
 
+function countQuestions_(sheetName) {
+  return countQuestionsFromData_(getSheet_(sheetName).getDataRange().getValues());
+}
+
+// Fetches every listed sheet's full data in a single Sheets API call instead
+// of one SpreadsheetApp call per sheet. This is the difference between a
+// category with ~20 sheets taking ~1-2s (one HTTP call) vs ~10-20s (20
+// sequential calls, each with its own fixed round-trip latency) — the
+// latter was slow enough to occasionally hit Google's own timeout for
+// serving the web app request. Requires the Sheets Advanced Service
+// (see appsscript.json).
+function batchGetSheetValues_(sheetNames) {
+  if (!sheetNames || sheetNames.length === 0) return {};
+  const ssId = SpreadsheetApp.getActiveSpreadsheet().getId();
+  const ranges = sheetNames.map(function (name) {
+    return "'" + name.replace(/'/g, "''") + "'";
+  });
+  const response = Sheets.Spreadsheets.Values.batchGet(ssId, { ranges: ranges });
+  const result = {};
+  (response.valueRanges || []).forEach(function (vr, i) {
+    result[sheetNames[i]] = vr.values || [];
+  });
+  return result;
+}
+
 // Building this list means reading quiz sheets in full just to count their
-// questions — slow, and identical for every student. Cache it so concurrent
-// students and repeat visits don't each pay that cost. Longer than it looks
-// like it should be (30 min, not 5) because the cold-cache path is not just
-// slow but occasionally hits Google's own timeout for serving the web app
-// request, returning an HTML error page instead of JSON — cutting how often
-// that path runs at all is the most reliable fix available without a bigger
-// architecture change. A newly added quiz sheet may take up to this long to
-// appear in the app.
-const TEST_LIST_CACHE_SECONDS = 1800;
+// questions. Cache it so concurrent students and repeat visits don't each
+// pay that cost. getTestsForCategory() now fetches a whole category's sheets
+// in one batched Sheets API call (see batchGetSheetValues_), so the cold
+// path is fast enough (~1-2s) that a short TTL is fine — a newly added quiz
+// sheet shows up within this long.
+const TEST_LIST_CACHE_SECONDS = 300;
 
 function getTestList() {
   const cache = CacheService.getScriptCache();
@@ -476,11 +500,15 @@ function getTestsForCategory(categoryName, studentId) {
   if (tests) {
     tests = JSON.parse(tests);
   } else {
-    tests = getQuestionSheetNames_().filter(function (name) {
+    const sheetNames = getQuestionSheetNames_().filter(function (name) {
       const parts = splitSheetName_(name);
       const cat = CATEGORY_PREFIX_MAP[parts.prefix] || parts.prefix;
       return cat === categoryName;
-    }).map(function (name) {
+    });
+
+    const dataBySheet = batchGetSheetValues_(sheetNames);
+
+    tests = sheetNames.map(function (name) {
       try {
         const parts = splitSheetName_(name);
         return {
@@ -488,7 +516,7 @@ function getTestsForCategory(categoryName, studentId) {
           label: name,
           shortLabel: parts.topic,
           category: categoryName,
-          totalQuestions: countQuestions_(name)
+          totalQuestions: countQuestionsFromData_(dataBySheet[name])
         };
       } catch (err) {
         return null;
