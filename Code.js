@@ -1,7 +1,7 @@
 // Quiz sets are discovered automatically from the spreadsheet's tabs — add a
 // new tab and it appears in the app with no code changes required. Everything
 // except these reserved sheets is treated as a quiz set.
-const RESERVED_SHEETS = ['Members', 'Quiz Results', 'Contact Us'];
+const RESERVED_SHEETS = ['Members', 'Quiz Results', 'Contact Us', 'Email'];
 
 // Non-quiz utility/admin tabs that have accumulated in the spreadsheet (a
 // pivot table, a roster, duplicated backup copies, etc.) — excluded by name
@@ -10,10 +10,22 @@ const IGNORED_SHEETS = [
   'MCN 2 - P1', 'Register', 'Pivot Table 1', 'Results', 'Radi', 'Copy of Radi', 'Copy of Med Surg - '
 ];
 
-// Where "Contact Us" ticket notifications are sent so you can just reply
-// directly from your inbox (each notification sets Reply-To to the
-// submitter's email).
-const SUPPORT_NOTIFY_EMAIL = 'raymerkado@gmail.com';
+// Where registration/Contact Us notifications are sent — read from column A
+// of the "Email" sheet (one address per row; a header row like "Email" is
+// automatically skipped since it doesn't contain an "@"). Falls back to a
+// hardcoded address if that sheet is missing or empty, so notifications
+// don't silently stop if the sheet gets renamed or cleared by mistake.
+function getNotifyEmails_() {
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName('Email');
+  if (sheet) {
+    const values = sheet.getRange(1, 1, Math.max(sheet.getLastRow(), 1), 1).getValues();
+    const emails = values
+      .map(function (row) { return String(row[0] || '').trim(); })
+      .filter(function (v) { return v.indexOf('@') !== -1; });
+    if (emails.length > 0) return emails.join(',');
+  }
+  return 'raymerkado@gmail.com';
+}
 
 // A tab named "Prefix - Topic" (e.g. "MCN - Sensory") is auto-split into a
 // category ("Prefix") and a short label ("Topic"). This map lets several
@@ -183,7 +195,7 @@ function registerMember(fields) {
   sheet.appendRow([email, name, password, referralCode, gcashRef, 'Pending']);
 
   MailApp.sendEmail({
-    to: SUPPORT_NOTIFY_EMAIL,
+    to: getNotifyEmails_(),
     replyTo: email,
     subject: 'New Passyoulike registration: ' + name,
     body: 'A new account is pending approval.\n\n' +
@@ -308,7 +320,7 @@ function submitContactRequest(fields) {
   sheet.appendRow([new Date(), ticketNumber, email, subject, message]);
 
   MailApp.sendEmail({
-    to: SUPPORT_NOTIFY_EMAIL,
+    to: getNotifyEmails_(),
     replyTo: email,
     subject: '[' + ticketNumber + '] ' + subject,
     body: 'New Contact Us ticket ' + ticketNumber + '\n\n' +
