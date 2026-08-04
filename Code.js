@@ -34,11 +34,11 @@ function getNotifyEmails_() {
 // own new category tile.
 const CATEGORY_PREFIX_MAP = {
   'MCN': 'MCN - Maternal & Child',
-  'Basic': 'Med Surg',
-  'Med Surg': 'Med Surg'
+  'Basic': 'Medical Surgical Nursing',
+  'Med Surg': 'Medical Surgical Nursing'
 };
 // Display order for the two allowed categories.
-const CATEGORY_ORDER = ['MCN - Maternal & Child', 'Med Surg'];
+const CATEGORY_ORDER = ['MCN - Maternal & Child', 'Medical Surgical Nursing'];
 
 function splitSheetName_(name) {
   const idx = name.indexOf(' - ');
