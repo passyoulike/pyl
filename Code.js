@@ -28,22 +28,29 @@ function getNotifyEmails_() {
 }
 
 // A tab named "Prefix - Topic" (e.g. "MCN - Sensory") is auto-split into a
-// category ("Prefix") and a short label ("Topic"). This map lets several
-// prefixes share one display category; any prefix not listed here becomes
-// its own category automatically, so new subject areas need no code change.
+// category ("Prefix") and a short label ("Topic"). Only these two categories
+// are ever shown — a sheet whose prefix isn't recognized here doesn't appear
+// on the dashboard at all (see resolveCategory_), rather than spawning its
+// own new category tile.
 const CATEGORY_PREFIX_MAP = {
   'MCN': 'MCN - Maternal & Child',
   'Basic': 'Med Surg',
   'Med Surg': 'Med Surg'
 };
-// Known categories are shown first, in this order; any new/unrecognized
-// category discovered from a sheet name is appended after these automatically.
+// Display order for the two allowed categories.
 const CATEGORY_ORDER = ['MCN - Maternal & Child', 'Med Surg'];
 
 function splitSheetName_(name) {
   const idx = name.indexOf(' - ');
   if (idx === -1) return { prefix: name.trim(), topic: name.trim() };
   return { prefix: name.slice(0, idx).trim(), topic: name.slice(idx + 3).trim() };
+}
+
+// Returns the display category for a sheet-name prefix, or null if it isn't
+// one of the recognized categories — callers should exclude that sheet
+// entirely rather than showing it under a stray/unexpected category.
+function resolveCategory_(prefix) {
+  return CATEGORY_PREFIX_MAP[prefix] || null;
 }
 
 // Every spreadsheet tab except the reserved ones is a candidate quiz set.
@@ -438,11 +445,13 @@ function getTestList() {
   const tests = getQuestionSheetNames_().map(function (name) {
     try {
       const parts = splitSheetName_(name);
+      const category = resolveCategory_(parts.prefix);
+      if (!category) return null;
       return {
         key: name,
         label: name,
         shortLabel: parts.topic,
-        category: CATEGORY_PREFIX_MAP[parts.prefix] || parts.prefix,
+        category: category,
         totalQuestions: countQuestions_(name)
       };
     } catch (err) {
@@ -492,7 +501,8 @@ function getCategorySummary() {
   const byCategory = {};
   getQuestionSheetNames_().forEach(function (name) {
     const parts = splitSheetName_(name);
-    const cat = CATEGORY_PREFIX_MAP[parts.prefix] || parts.prefix;
+    const cat = resolveCategory_(parts.prefix);
+    if (!cat) return;
     byCategory[cat] = (byCategory[cat] || 0) + 1;
   });
 
@@ -514,8 +524,7 @@ function getTestsForCategory(categoryName, studentId) {
   } else {
     const sheetNames = getQuestionSheetNames_().filter(function (name) {
       const parts = splitSheetName_(name);
-      const cat = CATEGORY_PREFIX_MAP[parts.prefix] || parts.prefix;
-      return cat === categoryName;
+      return resolveCategory_(parts.prefix) === categoryName;
     });
 
     const dataBySheet = batchGetSheetValues_(sheetNames);
