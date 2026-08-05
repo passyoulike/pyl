@@ -176,8 +176,13 @@ function setMaintenanceMode(requesterId, enabled) {
   return { ok: true, enabled: !!enabled };
 }
 
-// Free 3-month trial: no payment to verify, so accounts are approved
-// immediately rather than left Pending for manual review.
+const TRIAL_MONTHS = 5;
+
+// Free 5-month trial: no payment to verify, so accounts are approved
+// immediately rather than left Pending for manual review. Trial end date
+// (column G) and a live "days left" countdown (column H, a formula that
+// recalculates on its own whenever the sheet is opened) are recorded so you
+// can see at a glance who's about to run out.
 function registerMember(fields) {
   const name = String((fields && fields.name) || '').trim();
   const email = String((fields && fields.email) || '').trim();
@@ -199,17 +204,32 @@ function registerMember(fields) {
   if (String(sheet.getRange(1, 6).getValue() || '').trim() === '') {
     sheet.getRange(1, 6).setValue('Status');
   }
+  if (String(sheet.getRange(1, 7).getValue() || '').trim() === '') {
+    sheet.getRange(1, 7).setValue('Trial Ends');
+  }
+  if (String(sheet.getRange(1, 8).getValue() || '').trim() === '') {
+    sheet.getRange(1, 8).setValue('Trial Countdown');
+  }
+
+  const trialEnd = new Date();
+  trialEnd.setMonth(trialEnd.getMonth() + TRIAL_MONTHS);
+
   // Columns D (Referral Code) and E (Gcash confirmation) are left blank —
   // kept so the sheet's column layout stays compatible with older rows.
-  sheet.appendRow([email, name, password, '', '', 'Approved']);
+  sheet.appendRow([email, name, password, '', '', 'Approved', trialEnd, '']);
+  const newRow = sheet.getLastRow();
+  sheet.getRange(newRow, 8).setFormula(
+    '=IF(TODAY()>G' + newRow + ',"Expired",DATEDIF(TODAY(),G' + newRow + ',"D")&" days left")'
+  );
 
   MailApp.sendEmail({
     to: getNotifyEmails_(),
     replyTo: email,
-    subject: 'New Passyoulike registration (3-month trial): ' + name,
-    body: 'A new account started its 3-month free trial and can log in immediately.\n\n' +
+    subject: 'New Passyoulike registration (5-month trial): ' + name,
+    body: 'A new account started its 5-month free trial and can log in immediately.\n\n' +
       'Name: ' + name + '\n' +
-      'Email: ' + email
+      'Email: ' + email + '\n' +
+      'Trial ends: ' + trialEnd.toDateString()
   });
 
   return { ok: true };
