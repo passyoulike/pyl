@@ -124,13 +124,6 @@
     border-radius: 8px; padding: 9px 12px; font-size: 13px; margin-bottom: 16px;
   }
   .maintenance-banner.show { display: block; }
-  .payment-notice {
-    background: #eaf3fb; color: #14507a; border: 1px solid #bcdcf2;
-    border-radius: 8px; padding: 12px 14px; font-size: 13px;
-    margin-bottom: 18px;
-  }
-  .payment-notice strong { display: block; margin-bottom: 6px; }
-  .payment-notice ol { margin: 0; padding-left: 18px; line-height: 1.6; }
   .footer-note { text-align: center; font-size: 11.5px; color: var(--muted); margin-top: 22px; line-height: 1.5; }
   .footer-note a { color: var(--primary); font-weight: 600; text-decoration: none; }
   .footer-note a:hover { text-decoration: underline; }
@@ -314,15 +307,7 @@
     <!-- ---- Register panel ---- -->
     <div id="registerPanel" class="auth-panel">
       <div class="error" id="registerError">Something went wrong. Please try again.</div>
-      <div class="success" id="registerSuccess">Registration submitted! Your account is pending approval — you'll be able to log in once it's verified.</div>
-      <div class="payment-notice">
-        <strong>Instructions:</strong>
-        <ol>
-          <li>Send 200 pesos via GCash to 09051981530 (Ray Mercado)</li>
-          <li>Enter your GCash confirmation number once the transfer is complete</li>
-          <li>Wait for your approval notification</li>
-        </ol>
-      </div>
+      <div class="success" id="registerSuccess">You're all set! You have a 3-month free trial — you can log in right away.</div>
 
       <form id="registerForm" autocomplete="off">
         <div class="field">
@@ -339,14 +324,6 @@
             <input type="password" id="regPassword" placeholder="Choose a password" required>
             <button type="button" class="toggle-pw" id="toggleRegPw">Show</button>
           </div>
-        </div>
-        <div class="field">
-          <label for="regReferral">Referral Code (optional)</label>
-          <input type="text" id="regReferral" placeholder="Referral code (optional)">
-        </div>
-        <div class="field">
-          <label for="regGcash">Gcash Confirmation Number</label>
-          <input type="text" id="regGcash" placeholder="Gcash payment confirmation number" required>
         </div>
         <button type="submit" class="submit" id="registerBtn">Register</button>
       </form>
@@ -670,9 +647,7 @@
     callServer_('registerMember', {
       name: document.getElementById('regName').value.trim(),
       email: document.getElementById('regEmail').value.trim(),
-      password: regPwInput.value.trim(),
-      referralCode: document.getElementById('regReferral').value.trim(),
-      gcashRef: document.getElementById('regGcash').value.trim()
+      password: regPwInput.value.trim()
     }).then(() => {
       registerBtn.disabled = false;
       registerBtn.textContent = 'Register';

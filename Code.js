@@ -176,15 +176,15 @@ function setMaintenanceMode(requesterId, enabled) {
   return { ok: true, enabled: !!enabled };
 }
 
+// Free 3-month trial: no payment to verify, so accounts are approved
+// immediately rather than left Pending for manual review.
 function registerMember(fields) {
   const name = String((fields && fields.name) || '').trim();
   const email = String((fields && fields.email) || '').trim();
   const password = String((fields && fields.password) || '').trim();
-  const referralCode = String((fields && fields.referralCode) || '').trim(); // optional
-  const gcashRef = String((fields && fields.gcashRef) || '').trim();
 
-  if (!name || !email || !password || !gcashRef) {
-    throw new Error('Name, email, password, and Gcash confirmation number are required.');
+  if (!name || !email || !password) {
+    throw new Error('Name, email, and password are required.');
   }
 
   const sheet = getSheet_('Members');
@@ -199,18 +199,17 @@ function registerMember(fields) {
   if (String(sheet.getRange(1, 6).getValue() || '').trim() === '') {
     sheet.getRange(1, 6).setValue('Status');
   }
-  sheet.appendRow([email, name, password, referralCode, gcashRef, 'Pending']);
+  // Columns D (Referral Code) and E (Gcash confirmation) are left blank —
+  // kept so the sheet's column layout stays compatible with older rows.
+  sheet.appendRow([email, name, password, '', '', 'Approved']);
 
   MailApp.sendEmail({
     to: getNotifyEmails_(),
     replyTo: email,
-    subject: 'New Passyoulike registration: ' + name,
-    body: 'A new account is pending approval.\n\n' +
+    subject: 'New Passyoulike registration (3-month trial): ' + name,
+    body: 'A new account started its 3-month free trial and can log in immediately.\n\n' +
       'Name: ' + name + '\n' +
-      'Email: ' + email + '\n' +
-      'Referral Code: ' + (referralCode || '(none)') + '\n' +
-      'Gcash Confirmation #: ' + gcashRef + '\n\n' +
-      'Approve by setting column F (Status) to "Approved" for this row in the Members sheet.'
+      'Email: ' + email
   });
 
   return { ok: true };
