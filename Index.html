@@ -124,6 +124,11 @@
     border-radius: 8px; padding: 9px 12px; font-size: 13px; margin-bottom: 16px;
   }
   .maintenance-banner.show { display: block; }
+  .trial-banner {
+    background: #fff8ea; color: #7a5a0a; border: 1px solid rgba(217,164,65,0.5);
+    border-radius: 8px; padding: 9px 12px; font-size: 13px; margin-bottom: 18px; text-align: center;
+  }
+  .trial-banner.expired { background: #fdecea; color: var(--incorrect); border-color: #f5c2be; }
   .footer-note { text-align: center; font-size: 11.5px; color: var(--muted); margin-top: 22px; line-height: 1.5; }
   .footer-note a { color: var(--primary); font-weight: 600; text-decoration: none; }
   .footer-note a:hover { text-decoration: underline; }
@@ -402,6 +407,7 @@
       <h1 id="welcomeMsg">Welcome!</h1>
       <p>Choose a category to begin.</p>
     </div>
+    <div id="trialBannerDash"></div>
     <div id="adminSlot"></div>
     <div class="grid" id="categoryGrid">
       <div class="loading">Loading categories... Please wait (up to 5 minutes based on your internet speed).</div>
@@ -431,6 +437,7 @@
     <div class="progress" id="progressLabel"></div>
     <button class="pill-btn" id="backBtn">Back to Tests</button>
   </header>
+  <div id="trialBannerQuiz" style="max-width:var(--app-width);margin:0 auto;padding:0 20px;"></div>
   <main id="quizContainer">
     <div class="loading">Loading questions...</div>
   </main>
@@ -553,7 +560,11 @@
       loginBtn.disabled = false;
       loginBtn.textContent = 'Log In';
       if (res && res.ok) {
-        student = { id: res.id, name: res.name, isAdmin: !!res.isAdmin };
+        student = {
+          id: res.id, name: res.name, isAdmin: !!res.isAdmin,
+          trialDaysLeft: (typeof res.trialDaysLeft === 'number') ? res.trialDaysLeft : null,
+          trialExpired: !!res.trialExpired
+        };
         enterDashboard(summaryPromise);
       } else if (res && res.pending) {
         loginError.textContent = 'Your account is still pending approval. Please check back once it has been verified.';
@@ -720,10 +731,29 @@
     });
   });
 
+  // Shows a reminder of the student's remaining trial time — called on the
+  // dashboard (right after login) and again inside the quiz view, so it's
+  // visible both when they arrive and while they're actually taking a test.
+  // Renders nothing for accounts with no trial date (admins, older members).
+  function renderTrialBanner(containerId) {
+    const el = document.getElementById(containerId);
+    if (!student || student.trialDaysLeft === null || student.trialDaysLeft === undefined) {
+      el.innerHTML = '';
+      return;
+    }
+    if (student.trialExpired) {
+      el.innerHTML = '<div class="trial-banner expired">&#9888; Your free trial has ended. Contact your Passyoulike Admin to continue.</div>';
+    } else {
+      const days = student.trialDaysLeft;
+      el.innerHTML = '<div class="trial-banner">&#9203; ' + days + ' day' + (days === 1 ? '' : 's') + ' left in your free trial.</div>';
+    }
+  }
+
   // ---------- Dashboard (category selection) ----------
   function enterDashboard(prefetchedSummaryPromise) {
     document.getElementById('welcomeMsg').textContent = 'Welcome, ' + student.name + '!';
     document.getElementById('whoami').textContent = 'ID: ' + student.id;
+    renderTrialBanner('trialBannerDash');
     currentCategory = null;
     showView(dashboardView);
 
@@ -940,6 +970,7 @@
     document.getElementById('testTitle').textContent = shortLabel || label;
     document.getElementById('progressLabel').textContent = '';
     document.getElementById('quizContainer').innerHTML = '<div class="loading">Loading questions...</div>';
+    renderTrialBanner('trialBannerQuiz');
     showView(quizView);
 
     google.script.run

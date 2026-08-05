@@ -130,9 +130,21 @@ function getSheet_(name) {
 }
 
 // Members columns: A Email, B Name, C Password, D Referral Code, E Gcash
-// confirmation, F Status. Existing rows predate the Status column, so a blank
-// status is treated as approved — only self-registered rows (via
-// registerMember) start out 'Pending' and need an admin to flip them.
+// confirmation, F Status, G Trial Ends, H Trial Countdown (formula, admin-
+// facing only). Existing rows predate the Status column, so a blank status
+// is treated as approved — only self-registered rows (via registerMember)
+// start out 'Pending' and need an admin to flip them. Existing rows also
+// predate the trial columns, so a blank G just means no trial to show.
+function trialInfoFromRow_(row) {
+  const raw = row[6];
+  if (!raw) return { trialDaysLeft: null, trialExpired: false };
+  const trialEnd = new Date(raw);
+  if (isNaN(trialEnd.getTime())) return { trialDaysLeft: null, trialExpired: false };
+  const msPerDay = 24 * 60 * 60 * 1000;
+  const daysLeft = Math.ceil((trialEnd.getTime() - Date.now()) / msPerDay);
+  return { trialDaysLeft: daysLeft, trialExpired: daysLeft <= 0 };
+}
+
 function authenticate(studentId, password) {
   const data = getSheet_('Members').getDataRange().getValues();
   const idIn = String(studentId || '').trim().toLowerCase();
@@ -152,7 +164,11 @@ function authenticate(studentId, password) {
       if (isMaintenanceMode_() && !isAdmin) {
         return { ok: false, maintenance: true };
       }
-      return { ok: true, id: id, name: name, isAdmin: isAdmin };
+      const trial = trialInfoFromRow_(data[i]);
+      return {
+        ok: true, id: id, name: name, isAdmin: isAdmin,
+        trialDaysLeft: trial.trialDaysLeft, trialExpired: trial.trialExpired
+      };
     }
   }
   return { ok: false };
