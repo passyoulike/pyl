@@ -186,6 +186,19 @@
     width: fit-content;
   }
   .done-badge.failed { background: rgba(179,38,30,0.12); color: var(--incorrect); }
+  .online-indicator {
+    display: inline-flex; align-items: center; gap: 6px; font-size: 12.5px; color: var(--muted);
+    font-weight: 600; margin-bottom: 14px;
+  }
+  .online-dot {
+    width: 8px; height: 8px; border-radius: 50%; background: var(--correct);
+    box-shadow: 0 0 0 rgba(27,122,61,0.5); animation: online-pulse 2s infinite;
+  }
+  @keyframes online-pulse {
+    0% { box-shadow: 0 0 0 0 rgba(27,122,61,0.4); }
+    70% { box-shadow: 0 0 0 6px rgba(27,122,61,0); }
+    100% { box-shadow: 0 0 0 0 rgba(27,122,61,0); }
+  }
   .search-box {
     width: 100%; padding: 11px 13px; margin-bottom: 18px; border: 1px solid #d6ddda; border-radius: 8px;
     font-size: 16px; background: #fbfdfc; color: var(--text); font-family: inherit;
@@ -423,6 +436,9 @@
     <button class="pill-btn" id="categoryBackBtn">Back to Categories</button>
   </header>
   <main>
+    <div class="online-indicator" id="onlineIndicator">
+      <span class="online-dot"></span><span id="onlineCountText">-- online now</span>
+    </div>
     <input type="text" id="categorySearch" class="search-box" placeholder="Search tests...">
     <div id="categoryTestSections">
       <div class="loading">Loading tests...</div>
@@ -534,6 +550,43 @@
     });
   }
 
+  // ---------- Online presence ----------
+  // Pings the server every 25s while logged in so heartbeat() can track who's
+  // active; each response carries the current online count, which the
+  // category view displays. Not tied to being specifically inside a category
+  // — pinging continues on any screen so the count stays accurate — it's
+  // just only shown there.
+  let presenceIntervalId = null;
+  let latestOnlineCount = null;
+
+  function renderOnlineCount_() {
+    const el = document.getElementById('onlineCountText');
+    if (!el) return;
+    el.textContent = (latestOnlineCount === null ? '--' : latestOnlineCount) + ' online now';
+  }
+
+  function sendHeartbeat_() {
+    if (!student) return;
+    callServer_('heartbeat', student.id).then((res) => {
+      if (res && typeof res.onlineCount === 'number') {
+        latestOnlineCount = res.onlineCount;
+        renderOnlineCount_();
+      }
+    }).catch(() => {});
+  }
+
+  function startPresence_() {
+    sendHeartbeat_();
+    if (presenceIntervalId) clearInterval(presenceIntervalId);
+    presenceIntervalId = setInterval(sendHeartbeat_, 25000);
+  }
+
+  function stopPresence_() {
+    if (presenceIntervalId) clearInterval(presenceIntervalId);
+    presenceIntervalId = null;
+    latestOnlineCount = null;
+  }
+
   // Shown on the login screen so students know before even trying to log in;
   // authenticate() still enforces this server-side regardless of what the
   // banner shows (e.g. if it's stale from before an admin re-enabled login).
@@ -565,6 +618,7 @@
           trialDaysLeft: (typeof res.trialDaysLeft === 'number') ? res.trialDaysLeft : null,
           trialExpired: !!res.trialExpired
         };
+        startPresence_();
         enterDashboard(summaryPromise);
       } else if (res && res.pending) {
         loginError.textContent = 'Your account is still pending approval. Please check back once it has been verified.';
@@ -838,6 +892,7 @@
   }
 
   document.getElementById('logoutBtn').addEventListener('click', () => {
+    stopPresence_();
     student = null;
     document.getElementById('studentId').value = '';
     document.getElementById('password').value = '';
@@ -934,6 +989,8 @@
     document.getElementById('categoryProgressLabel').textContent = '';
     categorySearchInput.value = '';
     showView(categoryView);
+    renderOnlineCount_();
+    sendHeartbeat_();
 
     // Only scans the sheets belonging to this one category, not every quiz
     // sheet across the whole app — that's what makes opening a category fast

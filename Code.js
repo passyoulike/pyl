@@ -72,6 +72,33 @@ function isAdminId_(id) {
   return ADMIN_IDS.indexOf(String(id || '').trim()) !== -1;
 }
 
+// ---------- Online presence ----------
+// Simple polling-based "who's online" count: the frontend calls heartbeat()
+// every ~25s while logged in, and each call both refreshes the caller's own
+// presence and returns the current count. Everyone's last-seen timestamps
+// live in one CacheService entry (there's no way to enumerate cache keys
+// otherwise), pruning anyone not heard from in a while on every write.
+const PRESENCE_CACHE_KEY = 'onlinePresence';
+const PRESENCE_STALE_MS = 60000; // no heartbeat in this long = considered offline
+const PRESENCE_CACHE_TTL_SECONDS = 120;
+
+function heartbeat(studentId) {
+  const cache = CacheService.getScriptCache();
+  const raw = cache.get(PRESENCE_CACHE_KEY);
+  const presence = raw ? JSON.parse(raw) : {};
+  const now = Date.now();
+
+  if (studentId) {
+    presence[String(studentId).trim().toLowerCase()] = now;
+  }
+  Object.keys(presence).forEach(function (id) {
+    if (now - presence[id] > PRESENCE_STALE_MS) delete presence[id];
+  });
+
+  cache.put(PRESENCE_CACHE_KEY, JSON.stringify(presence), PRESENCE_CACHE_TTL_SECONDS);
+  return { ok: true, onlineCount: Object.keys(presence).length };
+}
+
 function doGet(e) {
   // ?action=<fnName>&args=<JSON array> switches this into a plain JSON API,
   // used by the standalone frontend hosted on GitHub Pages (which can't use
@@ -103,7 +130,8 @@ const API_FUNCTIONS_ = {
   setMaintenanceMode: setMaintenanceMode,
   requestPasswordReset: requestPasswordReset,
   resetPasswordWithCode: resetPasswordWithCode,
-  submitContactRequest: submitContactRequest
+  submitContactRequest: submitContactRequest,
+  heartbeat: heartbeat
 };
 
 function handleApiRequest_(action, argsJson) {
